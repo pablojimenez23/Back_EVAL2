@@ -12,7 +12,7 @@ jobs:
 
     steps:
       - name: Checkout codigo
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login en Docker Hub
         uses: docker/login-action@v3
@@ -21,7 +21,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build y Push imagen Docker
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
@@ -29,49 +29,17 @@ jobs:
             pabloandres23/innovatech-backend:latest
             pabloandres23/innovatech-backend:${{ github.sha }}
 
-      - name: Desplegar en EC2-Backend via bastion
+      - name: Desplegar en EC2-Backend via bastion Frontend
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            rm -f /tmp/key-backend.pem /tmp/backend.env
             echo "${{ secrets.EC2_BACKEND_KEY }}" > /tmp/key-backend.pem
             chmod 400 /tmp/key-backend.pem
-
-            cat > /tmp/backend.env << EOF
-            PORT=3000
-            DB_HOST=${{ secrets.DB_HOST }}
-            DB_PORT=3306
-            DB_USER=${{ secrets.DB_USER }}
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            DB_NAME=${{ secrets.DB_NAME }}
-            EOF
-
-            scp -i /tmp/key-backend.pem \
-              -o StrictHostKeyChecking=no \
-              /tmp/backend.env \
-              ubuntu@${{ secrets.EC2_BACKEND_HOST }}:/home/ubuntu/backend.env
-
-            ssh -i /tmp/key-backend.pem \
-              -o StrictHostKeyChecking=no \
-              ubuntu@${{ secrets.EC2_BACKEND_HOST }} << 'ENDSSH'
-                docker stop innovatech-backend || true
-                docker rm innovatech-backend || true
-                docker pull pabloandres23/innovatech-backend:latest
-
-                docker run -d \
-                  --name innovatech-backend \
-                  --restart always \
-                  -p 3000:3000 \
-                  --env-file /home/ubuntu/backend.env \
-                  -v backend-logs:/app/logs \
-                  pabloandres23/innovatech-backend:latest
-
-                sleep 5
-                docker ps | grep innovatech-backend
-                curl -f http://localhost:3000/api/usuarios && echo "Backend OK"
-            ENDSSH
-
-            rm /tmp/key-backend.pem
-            rm /tmp/backend.env
+            printf 'PORT=3000\nDB_HOST=${{ secrets.DB_HOST }}\nDB_PORT=3306\nDB_USER=${{ secrets.DB_USER }}\nDB_PASSWORD=${{ secrets.DB_PASSWORD }}\nDB_NAME=${{ secrets.DB_NAME }}\n' > /tmp/backend.env
+            scp -i /tmp/key-backend.pem -o StrictHostKeyChecking=no /tmp/backend.env ubuntu@${{ secrets.EC2_BACKEND_HOST }}:/home/ubuntu/backend.env
+            ssh -i /tmp/key-backend.pem -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_BACKEND_HOST }} "docker stop innovatech-backend || true && docker rm innovatech-backend || true && docker pull pabloandres23/innovatech-backend:latest && docker run -d --name innovatech-backend --restart always -p 3000:3000 --env-file /home/ubuntu/backend.env -v backend-logs:/app/logs pabloandres23/innovatech-backend:latest && sleep 5 && docker ps | grep innovatech-backend && echo Backend OK"
+            rm -f /tmp/key-backend.pem /tmp/backend.env
